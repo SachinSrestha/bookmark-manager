@@ -29,7 +29,9 @@ class Bookmark(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        indexes = [GinIndex(fields=["search_vector"])]
+        indexes = [GinIndex(fields=["search_vector"]),
+                   GinIndex(fields=["title"], name="title_trgm_idx", opclasses=["gin_trgm_ops"]),
+                ]
         unique_together = ("user", "normalized_url")
         ordering = ["-created_at"]
 

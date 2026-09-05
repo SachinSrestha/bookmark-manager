@@ -8,7 +8,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BookmarkBot/1.0)"}
 TIMEOUT = (5,15)
 HTML_MAX_BYTES = 15 * 1024 * 1024       # 15 MB cap
 PDF_MAX_BYTES =50 * 1024 * 1024
-MAX_TEXT_LENGTH = 20000            # cap stored text regardless of source type
+MAX_TEXT_LENGTH = 10000            # cap stored text regardless of source type
 
 
 def fetch_metadata(url: str) -> dict:

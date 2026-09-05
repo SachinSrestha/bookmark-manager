@@ -18,15 +18,19 @@ class BookmarkTagSerializer(serializers.ModelSerializer):
 
 class BookmarkSerializer(serializers.ModelSerializer):
     tags = BookmarkTagSerializer(source="bookmark_tags", many=True, read_only=True)
+    headline = serializers.SerializerMethodField()
 
     class Meta:
         model = Bookmark
         fields = [
             "id", "url", "title", "description", "favicon_url",
-            "status","resource_type", "is_favorite", "tags", "created_at", "updated_at",
+            "status","resource_type", "is_favorite", "tags", "headline", "created_at", "updated_at",
         ]
-        read_only_fields = ["title", "description", "favicon_url", "status"]
+        read_only_fields = ["title", "description", "favicon_url", "status","resource_type"]
 
     def create(self, validated_data):
         validated_data["normalized_url"] = normalize_url(validated_data["url"])
         return super().create(validated_data)
+    
+    def get_headline(self, obj):
+        return getattr(obj, "headline", None)

@@ -2,8 +2,9 @@ from django.shortcuts import get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
-from django.contrib.postgres.search import SearchQuery, SearchRank
-from django.db.models import Count
+from django.contrib.postgres.search import SearchQuery, SearchRank, SearchHeadline, TrigramWordSimilarity
+from django.db.models import Count, Value , TextField, Q
+from django.db.models.functions import Concat
 
 from .models import Bookmark, Tag
 from .serializers import BookmarkSerializer, TagSerializer
@@ -15,7 +16,6 @@ class BookmarkListCreateView(APIView):
     """GET  /api/bookmarks/      -> list current user's bookmarks (optionally filtered by ?tags=)
        POST /api/bookmarks/      -> create a bookmark, queue async fetch, return 202
     """
-    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         queryset = Bookmark.objects.filter(user=request.user)
@@ -44,7 +44,6 @@ class BookmarkDetailView(APIView):
        PATCH  /api/bookmarks/<id>/  -> edit favorite/manual fields
        DELETE /api/bookmarks/<id>/  -> delete
     """
-    permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self, request, pk):
         return get_object_or_404(Bookmark, pk=pk, user=request.user)
@@ -74,20 +73,39 @@ class BookmarkDetailView(APIView):
 
 class BookmarkSearchView(APIView):
     """GET /api/bookmarks/search/?q=... -> ranked full-text search"""
-    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         query_text = request.query_params.get("q", "").strip()
         if not query_text:
             return Response({"detail": "q parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        search_query = SearchQuery(query_text)
+        search_query = SearchQuery(query_text, search_type="websearch")
         results = (
             Bookmark.objects.filter(user=request.user, search_vector=search_query)
-            .annotate(rank=SearchRank("search_vector", search_query))
+            .annotate(rank=SearchRank("search_vector", search_query,normalization=32),
+                    headline=SearchHeadline(
+                        "raw_content", search_query,
+                        start_sel="<b>", stop_sel="</b>",
+                        max_words=20, min_words=8,
+                        ),
+                    )
+            .filter(rank__gte=0.01)
             .order_by("-rank")
         )
-        serializer = BookmarkSerializer(results, many=True)
+        
+        if results.exists():
+            serializer = BookmarkSerializer(results, many=True)
+            return Response(serializer.data)
+        fuzzy_results = (
+            Bookmark.objects.filter(user=request.user)
+            .annotate(
+                combined=Concat("title", Value(" "), "description", output_field=TextField(),),
+            )
+            .annotate(similarity=TrigramWordSimilarity( query_text, "combined"))
+            .filter(Q(similarity__gt=0.15) | Q(title__icontains=query_text)) 
+            .order_by("-similarity")[:5]
+        )
+        serializer = BookmarkSerializer(fuzzy_results, many=True)
         return Response(serializer.data)
 
 class BookmarkRetryView(APIView):
@@ -115,7 +133,6 @@ class BookmarkRetryView(APIView):
 
 class TagListView(APIView):
     """GET /api/tags/ -> list all tags"""
-    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         tags = Tag.objects.all()
