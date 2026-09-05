@@ -23,7 +23,7 @@ class BookmarkSerializer(serializers.ModelSerializer):
         model = Bookmark
         fields = [
             "id", "url", "title", "description", "favicon_url",
-            "status", "is_favorite", "tags", "created_at", "updated_at",
+            "status","resource_type", "is_favorite", "tags", "created_at", "updated_at",
         ]
         read_only_fields = ["title", "description", "favicon_url", "status"]
 

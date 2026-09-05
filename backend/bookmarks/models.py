@@ -23,6 +23,7 @@ class Bookmark(models.Model):
     fetch_error = models.CharField(max_length=500, blank=True)
     fetch_attempts = models.PositiveSmallIntegerField(default=0)
     search_vector = SearchVectorField(null=True, blank=True)
+    resource_type = models.CharField(max_length=20, blank=True)
     is_favorite = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

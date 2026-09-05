@@ -8,8 +8,8 @@ class BookmarkTagInline(admin.TabularInline):
 
 @admin.register(Bookmark)
 class BookmarkAdmin(admin.ModelAdmin):
-    list_display = ["title", "url", "status", "user", "created_at"]
-    list_filter = ["status", "is_favorite"]
+    list_display = ["title", "url", "status", "resource_type","user", "created_at"]
+    list_filter = ["status","resource_type", "is_favorite"]
     search_fields = ["title", "url"]
     inlines = [BookmarkTagInline]
 
