@@ -5,6 +5,8 @@ from rest_framework import status, permissions
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchHeadline, TrigramWordSimilarity
 from django.db.models import Count, Value , TextField, Q
 from django.db.models.functions import Concat
+from django_ratelimit.decorators import ratelimit
+from django.utils.decorators import method_decorator
 
 from .models import Bookmark, Tag
 from .serializers import BookmarkSerializer, TagSerializer
@@ -28,8 +30,9 @@ class BookmarkListCreateView(APIView):
         serializer = BookmarkSerializer(queryset, many=True)
         return Response(serializer.data)
 
+    @method_decorator(ratelimit(key="user", rate="30/h", block=True))
     def post(self, request):
-        serializer = BookmarkSerializer(data=request.data)
+        serializer = BookmarkSerializer(data=request.data,context={"request": request})
         serializer.is_valid(raise_exception=True)
         bookmark = serializer.save(user=request.user)
 
