@@ -1,8 +1,9 @@
 import requests
-from celery import shared_task
+from celery import shared_task, chain
 from django.contrib.postgres.search import SearchVector
-
-from .models import Bookmark
+import yake
+from django.db.models import Value
+from .models import Bookmark, Tag, BookmarkTag
 from .services import fetch_metadata
 
 
@@ -33,21 +34,47 @@ def fetch_bookmark(self, bookmark_id):
     bookmark.status = "fetched"
     bookmark.save()
 
-    update_search_vector.delay(bookmark_id)
-    generate_tags.delay(bookmark_id)
+    chain(generate_tags.s(bookmark_id), update_search_vector.s()).delay()
 
 
 @shared_task
 def update_search_vector(bookmark_id):
+    try:
+        bookmark = Bookmark.objects.get(id=bookmark_id)
+    except Bookmark.DoesNotExist:
+        return
+
+    tag_names = " ".join(bt.tag.name for bt in bookmark.bookmark_tags.all())
+    
     Bookmark.objects.filter(id=bookmark_id).update(
         search_vector=(
             SearchVector("title", weight="A")
             + SearchVector("description", weight="B")
+            + SearchVector(Value(tag_names), weight="B")
             + SearchVector("raw_content", weight="C")
         )
     )
 
 @shared_task
 def generate_tags(bookmark_id):
-    # Implemented in Phase 5
-    pass
+    try:
+        bookmark = Bookmark.objects.get(id = bookmark_id)
+    except:
+        return
+    
+    text = f"{bookmark.title} {bookmark.raw_content}"[:5000]
+    if not text.strip():
+        return
+    
+    kw_extractor = yake.KeywordExtractor(lan="en", n =2, top =8)
+    keywords = kw_extractor.extract_keywords(text)
+    
+    for keyword, score in keywords:
+        tag, _ = Tag.objects.get_or_create(name=keyword.lower(),
+                                           defaults={"slug": keyword.lower().replace(" ", "-")},
+                                           )
+        BookmarkTag.objects.get_or_create(bookmark=bookmark, tag=tag,
+                                          defaults={"source":"auto","confidence":score},
+                                          )
+        
+    return bookmark_id

@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; BookmarkBot/1.0)"}
 TIMEOUT = (5,15)
@@ -89,7 +90,12 @@ def _extract_favicon(soup, final_url: str) -> str | None:
 
 
 def _parse_pdf(content: bytes, final_url: str) -> dict:
-    reader = PdfReader(io.BytesIO(content))
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        if reader.pages:
+            _ = reader.pages[0]  
+    except PdfReadError as e:
+        raise ValueError(f"Could not parse PDF: {e}") from e
 
     title = ""
     if reader.metadata and reader.metadata.title:
