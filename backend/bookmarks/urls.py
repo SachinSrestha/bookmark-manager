@@ -4,10 +4,12 @@ from .views import (
     BookmarkDetailView,
     BookmarkSearchView,
     TagListView,
-    BookmarkRetryView
+    BookmarkRetryView,
+    RegisterView,
 )
 
 urlpatterns = [
+    path("register/", RegisterView.as_view(), name="register"),
     path("bookmarks/", BookmarkListCreateView.as_view(), name="bookmark-list-create"),
     path("bookmarks/search/", BookmarkSearchView.as_view(), name="bookmark-search"),
     path("bookmarks/<int:pk>/", BookmarkDetailView.as_view(), name="bookmark-detail"),

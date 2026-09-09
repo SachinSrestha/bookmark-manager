@@ -8,6 +8,11 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bookmarks"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7
@@ -15,29 +20,33 @@ services:
       - "6379:6379"
 
   web:
-    build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    build: ./backend
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
     volumes:
-      - .:/app
+      - ./backend:/app
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     env_file: .env
     environment:
-      DB_HOST: db     
+      DB_HOST: db
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
 
   worker:
-    build: .
+    build: ./backend
     command: celery -A config worker -l info
     volumes:
-      - .:/app
+      - ./backend:/app
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     env_file: .env
     environment:
       DB_HOST: db

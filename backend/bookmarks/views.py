@@ -1,9 +1,11 @@
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.models import User
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
+from rest_framework.authtoken.models import Token
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchHeadline, TrigramWordSimilarity
-from django.db.models import Count, Value , TextField, Q
+from django.db.models import Count, Value, TextField, Q
 from django.db.models.functions import Concat
 from django_ratelimit.decorators import ratelimit
 from django.utils.decorators import method_decorator
@@ -11,12 +13,17 @@ from django.utils.decorators import method_decorator
 from .models import Bookmark, Tag
 from .serializers import BookmarkSerializer, TagSerializer
 from .tasks import fetch_bookmark
+from .pagination import BookmarkCursorPagination
 
 MAX_MANUAL_RETRIES = 5
 
 class BookmarkListCreateView(APIView):
-    """GET  /api/bookmarks/      -> list current user's bookmarks (optionally filtered by ?tags=)
+    """GET  /api/bookmarks/      -> list current user's bookmarks (cursor-paginated, 20/page)
+                                    Optional filters: ?tags=django,python  ?page_size=10
        POST /api/bookmarks/      -> create a bookmark, queue async fetch, return 202
+
+    Pagination envelope:
+        { "next": "<url|null>", "previous": "<url|null>", "results": [...] }
     """
 
     def get(self, request):
@@ -24,11 +31,13 @@ class BookmarkListCreateView(APIView):
 
         tags_param = request.query_params.get("tags")
         if tags_param:
-            tag_names = tags_param.split(",")
+            tag_names = [t.strip() for t in tags_param.split(",") if t.strip()]
             queryset = queryset.filter(bookmark_tags__tag__name__in=tag_names).distinct()
 
-        serializer = BookmarkSerializer(queryset, many=True)
-        return Response(serializer.data)
+        paginator = BookmarkCursorPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        serializer = BookmarkSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     @method_decorator(ratelimit(key="user", rate="30/h", block=True))
     def post(self, request):
@@ -113,9 +122,9 @@ class BookmarkSearchView(APIView):
 
 class BookmarkRetryView(APIView):
     def post(self, request, pk):
-        bookmark = get_object_or_404(Bookmark, pk=pk , user =request.user)
+        bookmark = get_object_or_404(Bookmark, pk=pk, user=request.user)
         
-        if bookmark.status not in ("failed"):
+        if bookmark.status != "failed":
             return Response({"detail": f"Cannot retry a bookmark with status '{bookmark.status}'"},
             status=status.HTTP_400_BAD_REQUEST,)
         
@@ -141,3 +150,34 @@ class TagListView(APIView):
         tags = Tag.objects.all()
         serializer = TagSerializer(tags, many=True)
         return Response(serializer.data)
+
+
+class RegisterView(APIView):
+    """POST /api/register/ -> register a new user and return their auth token"""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        username = (request.data.get("username") or "").strip()
+        password = request.data.get("password") or ""
+        if not username or not password:
+            return Response(
+                {"error": "Both username and password are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(password) < 6:
+            return Response(
+                {"error": "Password must be at least 6 characters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {"error": "Username already taken."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.create_user(username=username, password=password)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(
+            {"token": token.key, "username": user.username},
+            status=status.HTTP_201_CREATED,
+        )

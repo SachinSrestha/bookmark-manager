@@ -71,8 +71,8 @@ def update_search_vector(bookmark_id):
 @shared_task
 def generate_tags(bookmark_id):
     try:
-        bookmark = Bookmark.objects.get(id = bookmark_id)
-    except:
+        bookmark = Bookmark.objects.get(id=bookmark_id)
+    except Bookmark.DoesNotExist:
         return
     
     text = f"{bookmark.title} {bookmark.raw_content}"[:5000]
